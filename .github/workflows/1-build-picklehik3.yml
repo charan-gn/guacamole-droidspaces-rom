@@ -33,6 +33,11 @@ jobs:
           git -C picklehik3 apply \
             $GITHUB_WORKSPACE/picklehik3-patches/termux-x11.patch
 
+      - name: Apply terminal-view dependencies patch
+        run: |
+          git -C picklehik3 apply \
+            $GITHUB_WORKSPACE/picklehik3-patches/terminal-view-deps.patch
+
       - name: Copy DesktopActivity.java
         run: |
           mkdir -p picklehik3/app/src/main/java/com/termux/app/
