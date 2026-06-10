@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/app/src/main/java/com/termux/x11/XServer.java
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,58 @@
 +package com.termux.x11;
 +
 +import android.util.Log;
