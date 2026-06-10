@@ -39,6 +39,8 @@ jobs:
       - name: Apply LOS 18.1 specific fixes
         run: |
           cd kernel
+          # Remove -no-integrated-as so LLVM_IAS=1 works (system as is x86_64, not aarch64)
+          sed -i '/no-integrated-as/d' Makefile
           # Remove opslalib from drivers-y (not needed for build but patch was stale)
           # -I$(src) additions for clang compatibility when headers use relative paths
           for line in \
