@@ -94,6 +94,9 @@ jobs:
           sed -i 's/# CONFIG_CGROUP_DEVICE is not set/CONFIG_CGROUP_DEVICE=y/' kernel/.config
           sed -i 's/# CONFIG_CGROUP_PIDS is not set/CONFIG_CGROUP_PIDS=y/' kernel/.config
           sed -i 's/CONFIG_BRIDGE_NETFILTER=m/CONFIG_BRIDGE_NETFILTER=y/' kernel/.config
+          # Disable VDSO: LLVM integrated assembler chokes on GAS .macro syntax in
+          # arch/arm64/kernel/vdso/gettimeofday.S ("too many positional arguments")
+          sed -i 's/CONFIG_ARM64_VDSO=y/# CONFIG_ARM64_VDSO is not set/' kernel/.config
 
       - name: Configure kernel
         run: |
