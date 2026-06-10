@@ -63,23 +63,31 @@ jobs:
           echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "ANDROID_HOME=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
           echo "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          # Install platform-tools + build-tools
           yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
             --sdk_root=$ANDROID_SDK_ROOT \
             "platform-tools" \
             "build-tools;36.0.0" \
-            "platforms;android-36" \
-            "build-tools;34.0.0" \
-            "platforms;android-34" \
-            2>&1 | tail -5
+            2>&1 | tail -3
+          # Find the highest platform available matching android-35+ (for VANILLA_ICE_CREAM)
+          PLATFORMS=$($ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            --sdk_root=$ANDROID_SDK_ROOT --list 2>/dev/null | \
+            grep -oP 'platforms;android-3[5-9]|platforms;android-3[0-9]{2}' | sort -V | tail -3)
+          echo "Available platforms: $PLATFORMS"
+          for PLAT in $PLATFORMS; do
+            yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+              --sdk_root=$ANDROID_SDK_ROOT "$PLAT" 2>&1 | tail -3
+          done
+          # Also install android-34 as fallback
+          yes | $ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager \
+            --sdk_root=$ANDROID_SDK_ROOT "platforms;android-34" 2>&1 | tail -3
 
       - name: Build with Gradle
         run: |
           cd picklehik3
           chmod +x gradlew
           ANDROID_HOME=$ANDROID_SDK_ROOT ./gradlew assembleRelease \
-            -x lintVitalRelease -x lint \
-            -PcompileSdkVersion=34 \
-            -PtargetSdkVersion=34
+            -x lintVitalRelease -x lint
 
       - name: Decode keystore
         run: |
