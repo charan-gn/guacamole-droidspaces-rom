@@ -1,7 +1,7 @@
 --- a/app/src/main/AndroidManifest.xml
 +++ b/app/src/main/AndroidManifest.xml
-@@ -119,6 +119,17 @@
-             </intent-filter>
+@@ -121,6 +121,17 @@
+                 android:resource="@xml/shortcuts" />
          </activity>
  
 +        <activity
