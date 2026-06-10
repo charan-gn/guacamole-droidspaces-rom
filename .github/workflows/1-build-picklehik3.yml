@@ -71,7 +71,10 @@ jobs:
         run: |
           cd picklehik3
           chmod +x gradlew
-          ANDROID_HOME=$ANDROID_SDK_ROOT ./gradlew assembleRelease -x lintVitalRelease -x lint
+          ANDROID_HOME=$ANDROID_SDK_ROOT ./gradlew assembleRelease \
+            -x lintVitalRelease -x lint \
+            -PcompileSdkVersion=34 \
+            -PtargetSdkVersion=34
 
       - name: Decode keystore
         run: |
