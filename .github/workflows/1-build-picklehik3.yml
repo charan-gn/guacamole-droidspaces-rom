@@ -103,14 +103,19 @@ jobs:
           if [ -z "$APKSIGNER" ]; then
             APKSIGNER=$(which apksigner 2>/dev/null || echo "")
           fi
-          echo "Using apksigner: $APKSIGNER"
+          # Find the unsigned APK (AGP 8.x changed output paths)
+          UNSIGNED_APK=$(find picklehik3 -name "*.apk" -path "*/release/*" ! -name "*signed*" ! -name "*test*" 2>/dev/null | head -1)
+          if [ -z "$UNSIGNED_APK" ]; then
+            UNSIGNED_APK=$(find picklehik3 -name "*.apk" ! -name "*signed*" ! -name "*test*" 2>/dev/null | head -1)
+          fi
+          echo "Using unsigned APK: $UNSIGNED_APK"
           $APKSIGNER sign \
             --ks mykey.jks \
             --ks-key-alias "${{ secrets.KEYSTORE_ALIAS }}" \
             --ks-pass "pass:${{ secrets.KEYSTORE_PASSWORD }}" \
             --key-pass "pass:${{ secrets.KEY_PASSWORD }}" \
             --out PickleHik3-signed.apk \
-            picklehik3/app/build/outputs/apk/release/app-release-unsigned.apk
+            "$UNSIGNED_APK"
 
       - uses: actions/upload-artifact@v4
         with:
