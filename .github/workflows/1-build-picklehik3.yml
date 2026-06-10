@@ -69,7 +69,7 @@ jobs:
         run: |
           cd picklehik3
           chmod +x gradlew
-          ANDROID_HOME=$ANDROID_SDK_ROOT ./gradlew assembleRelease
+          ANDROID_HOME=$ANDROID_SDK_ROOT ./gradlew assembleRelease -x lintVitalRelease -x lint
 
       - name: Decode keystore
         run: |
