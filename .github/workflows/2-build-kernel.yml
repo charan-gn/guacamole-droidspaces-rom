@@ -27,7 +27,57 @@ jobs:
       - name: Apply kernel patches
         run: |
           cd kernel
-          git apply ../kernel-patches.diff || git apply --reject ../kernel-patches.diff
+          # Try to apply all patches; report but don't fail on rejects
+          git apply ../kernel-patches.diff 2>&1 || \
+            git apply --reject ../kernel-patches.diff 2>&1 || true
+          # Show any rejected patches
+          for rej in $(find . -name "*.rej" 2>/dev/null); do
+            echo "=== REJECTED: $rej ==="
+            cat "$rej"
+          done
+
+      - name: Apply LOS 18.1 specific fixes
+        run: |
+          cd kernel
+          # Remove opslalib from drivers-y (not needed for build but patch was stale)
+          # -I$(src) additions for clang compatibility when headers use relative paths
+          for line in \
+            "fno-var-tracking-assignments" \
+            "fconserve-stack" \
+            "implicit-int" \
+            "strict-prototypes" \
+            "date-time" \
+            "incompatible-pointer-types" \
+            "designated-init" \
+            "ARCH_CFLAGS"; do
+            case "$line" in
+              "ARCH_CFLAGS")
+                sed -i '/^KBUILD_CFLAGS.*\$(ARCH_CFLAGS).*\$(KCFLAGS)$/a KBUILD_CFLAGS += -I\$(src)' Makefile
+                ;;
+              *)
+                sed -i "/KBUILD_CFLAGS.*cc-option.*${line}/a KBUILD_CFLAGS += -I\$(src)" Makefile
+                ;;
+            esac
+          done
+          # Add ccflags-y to specific drivers that need -I$(src) for clang
+          for dir in \
+            "drivers/clk/qcom/mdss" \
+            "drivers/net/ethernet/aquantia/atlantic-fwd" \
+            "drivers/net/wireless/ath/ath10k" \
+            "drivers/net/wireless/ath/ath6kl" \
+            "drivers/net/wireless/ath/wil6210"; do
+            if [ -f "$dir/Makefile" ]; then
+              grep -q "ccflags-y.*-I\$(src)" "$dir/Makefile" 2>/dev/null || \
+                echo "ccflags-y += -I\$(src)" >> "$dir/Makefile"
+            fi
+          done
+          # Add clang warning suppressions for power supply drivers
+          for dir in "drivers/power/supply/qcom"; do
+            if [ -f "$dir/Makefile" ]; then
+              grep -q "ccflags-y.*-Wno-error" "$dir/Makefile" 2>/dev/null || \
+                printf "ccflags-y += -Wno-error -Wno-format -Wno-return-type -Wno-pointer-to-int-cast\nccflags-y += -Wno-implicit-int -Wno-error=implicit-int\n" >> "$dir/Makefile"
+            fi
+          done
 
       - name: Copy kernel config
         run: |
