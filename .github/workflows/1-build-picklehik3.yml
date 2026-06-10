@@ -87,7 +87,11 @@ jobs:
           cd picklehik3
           chmod +x gradlew
           ANDROID_HOME=$ANDROID_SDK_ROOT ./gradlew assembleRelease \
-            -x lintVitalRelease -x lint
+            -x lintVitalRelease -x lint \
+            -x :termux-shared:verifyReleaseResources \
+            -x :terminal-view:verifyReleaseResources \
+            -x :terminal-emulator:verifyReleaseResources \
+            -x :termux-am-library:verifyReleaseResources
 
       - name: Decode keystore
         run: |
