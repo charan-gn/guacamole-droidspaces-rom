@@ -123,6 +123,7 @@ jobs:
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
+            LLVM_IAS=1 \
             KCFLAGS="-Wno-error -Wno-unknown-warning-option" \
             -j$(nproc)
 
