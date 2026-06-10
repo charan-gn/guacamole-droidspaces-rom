@@ -1,0 +1,14 @@
+--- a/device.mk
++++ b/device.mk
+@@ -1,4 +1,4 @@
+-PRODUCT_PACKAGES += Launcher3
++PRODUCT_PACKAGES += PickleHik3 DroidSpaces
+
+ PRODUCT_PROPERTY_OVERRIDES += \
+-    ro.config.launcher=com.android.launcher3
++    persist.wm.extensions.enabled=true \
++    persist.sys.freeform=true \
++    persist.sys.force_desktop_mode_on_external_displays=true \
++    ro.config.home_package=com.termux
+
++include device/oneplus/guacamole/prebuilts/Android.mk

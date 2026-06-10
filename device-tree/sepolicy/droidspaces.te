@@ -1,0 +1,109 @@
+# DroidSpaces SELinux policy for LineageOS 18.1 (Android 11)
+# Type: system_app
+
+type droidspaces, appdomain, domain;
+
+# Allow DroidSpaces to run as system_app context
+# This ensures it has the system_app SELinux domain which grants
+# elevated privileges necessary for namespace/chroot operations
+typeattribute droidspaces system_app_type;
+
+# Namespace creation permissions
+# AVC denial likely on first boot: "droidspaces: sys_admin"
+# The clone(2) syscall with CLONE_NEW* flags requires sys_admin capability
+# in the process's effective set. Without this, namespace creation silently
+# fails with EPERM.
+allow droidspaces self:capability sys_admin;
+
+# CLONE_NEWPID — new PID namespace (required for chroot)
+# CLONE_NEWNS — new mount namespace (required for isolated mount table)
+# CLONE_NEWNET — new network namespace (required for isolated network stack)
+# CLONE_NEWUTS — new UTS namespace (required for hostname isolation)
+# CLONE_NEWIPC — new IPC namespace (required for SysV IPC isolation)
+# These are controlled via the sys_admin capability check in the kernel,
+# not individual SELinux permissions. The sys_admin cap covers all clone
+# flags. There is no finer-grained SELinux control per namespace type.
+allow droidspaces self:capability sys_admin;
+
+# sys_chroot capability — required to call chroot(2)
+# AVC denial likely on first boot: "droidspaces: sys_chroot"
+# Without this, chroot() returns EPERM and the container rootfs
+# switch fails. Required for any chroot-based container setup.
+allow droidspaces self:capability sys_chroot;
+
+# net_admin capability — required for network configuration inside
+# containers (bring up interfaces, set routes, configure NAT)
+# AVC denial likely on first boot: "droidspaces: net_admin"
+# Without this, container network setup fails silently.
+allow droidspaces self:capability net_admin;
+
+# setuid + setgid capabilities — required for su/sudo inside container
+# AVC denial likely on first boot: "droidspaces: setuid"
+# Without these, privileged user switching inside the container
+# fails with EPERM.
+allow droidspaces self:capability setuid;
+allow droidspaces self:capability setgid;
+
+# Loop device access — required for mounting disk images as filesystems
+# AVC denial likely on first boot:
+#   "droidspaces: /dev/loop-control chr_file { open read write ioctl }"
+#   "droidspaces: /dev/loop0 blk_file { open read write }"
+# Loop control is used when losetup -f finds the first available
+# loop device. Individual loop block devices (/dev/loopN) are
+# needed for actual loop device setup. Both chr_file (control)
+# and blk_file (device nodes) permissions are required.
+allow droidspaces loop_device:chr_file rw_file_perms;
+allow droidspaces loop_device:blk_file rw_file_perms;
+
+# TUN/TAP device access — required for container VPN/tunnel interfaces
+# AVC denial likely on first boot:
+#   "droidspaces: /dev/tun chr_file { open read write ioctl }"
+# /dev/tun is a character device. OpenVPN, WireGuard, or container
+# networking that uses tun/tap interfaces will fail without this.
+allow droidspaces tun_device:chr_file rw_file_perms;
+
+# GPU device access — required for hardware-accelerated rendering
+# inside containers (e.g., Mesa/Gallium3D)
+# AVC denial likely on first boot:
+#   "droidspaces: /dev/kgsl-3d0 chr_file { open read write ioctl mmap }"
+#   "droidspaces: /dev/dri/card0 chr_file { open read write ioctl mmap }"
+# KGSL is Qualcomm's GPU driver interface. Without GPU access,
+# any graphics rendering inside the container falls back to
+# software rendering (llvmpipe), which is unusably slow.
+allow droidspaces kgsl_device:chr_file rw_file_perms;
+allow droidspaces gpu_device:chr_file rw_file_perms;
+
+# Mount/unmount inside new namespaces — required for bind mounts,
+# proc/sysfs/devpts mounting within the container
+# AVC denial likely on first boot:
+#   "droidspaces: mount"
+# Mounting in a namespace that was created with CLONE_NEWNS still
+# requires the mount permission in SELinux. Without this, all
+# mount(2) calls inside the container return EPERM.
+allow droidspaces self:capability sys_admin;
+
+# Netlink route socket — required for RTNETLINK operations
+# (interface config, routing table manipulation) inside the container
+# AVC denial likely on first boot:
+#   "droidspaces: { create bind write read } netlink_route_socket"
+#   "droidspaces: nlmsg_write netlink_route_socket"
+# Container network configuration tools (ip, ifconfig, route) use
+# netlink sockets. Without these permissions, all network config
+# commands fail with EOPNOTSUPP or EPERM.
+allow droidspaces self:netlink_route_socket create_socket_perms;
+allow droidspaces self:netlink_route_socket nlmsg_write;
+
+# Allow execution of binaries under /data/local/chroot-distro
+# This path is where container root filesystems reside. All
+# executables inside the chroot must be executable from this
+# context.
+# AVC denial likely on first boot:
+#   "droidspaces: /data/local/chroot-distro/debian/usr/bin/bash file { execute }
+# Files in app_data_file context already allow execute for the
+# owning app. This extends access to the chroot-distro subtree.
+allow droidspaces app_data_file:file { execute execute_no_trans };
+allow droidspaces app_data_file:dir { read search };
+
+# Allow creation of pseudo-terminal devices inside the container
+# (required for interactive shells)
+allow droidspaces devpts:chr_file { open read write ioctl };

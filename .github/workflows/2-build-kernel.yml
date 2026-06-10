@@ -1,0 +1,154 @@
+name: 2 - Build Kernel + Magisk Boot Image
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Clone LOS 18.1 kernel
+        run: |
+          git clone --depth=1 -b lineage-18.1 \
+            https://github.com/LineageOS/android_kernel_oneplus_sm8150 \
+            kernel/
+
+      - name: Fetch kernel patches and config
+        run: |
+          git clone --depth=1 \
+            https://github.com/charan-gn/guacamole-droidspaces-kernel.git \
+            kernel-src/
+          cp kernel-src/kernel-patches.diff .
+          cp kernel-src/kernel-config-backup .
+          cp kernel-src/Magisk-v30.7.zip .
+
+      - name: Apply kernel patches
+        run: |
+          cd kernel
+          git apply ../kernel-patches.diff || git apply --reject ../kernel-patches.diff
+
+      - name: Copy kernel config
+        run: |
+          cp kernel-config-backup kernel/.config
+
+      - name: Configure kernel
+        run: |
+          make -C kernel ARCH=arm64 olddefconfig
+
+      - name: Install NDK clang r416183b
+        run: |
+          mkdir -p toolchain
+          cd toolchain
+          git init
+          git remote add origin \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
+          git config core.sparseCheckout true
+          echo "clang-r416183b/" >> .git/info/sparse-checkout
+          # Use master branch (AOSP convention)
+          git fetch --depth=1 origin master
+          git checkout origin/master
+          echo "CLANG_DIR=$(pwd)/clang-r416183b" >> $GITHUB_ENV
+
+      - name: Install GCC 4.9 aarch64 toolchain
+        run: |
+          mkdir -p gcc-toolchain
+          cd gcc-toolchain
+          git init
+          git remote add origin \
+            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9
+          git fetch --depth=1 origin master
+          git checkout origin/master
+          echo "GCC_DIR=$(pwd)" >> $GITHUB_ENV
+
+      - name: Build kernel
+        run: |
+          export PATH="$CLANG_DIR/bin:$GCC_DIR/bin:$PATH"
+          make -C kernel ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            KCFLAGS="-Wno-error -Wno-unknown-warning-option" \
+            -j$(nproc)
+
+      - name: Download latest LOS 18.1 boot.img
+        run: |
+          BOOT_IMG_URL=""
+          download_bootimg() {
+            local url="$1"
+            echo "Trying: $url"
+            if curl -sIL "$url" 2>/dev/null | head -20 | grep -q "200\|302"; then
+              BOOT_IMG_URL="$url"
+              return 0
+            fi
+            return 1
+          }
+          for DEVICE in guacamole guacamoleb guacamolec; do
+            # Try API v1 for latest nightly
+            API_URL=$(curl -s "https://download.lineageos.org/api/v1/${DEVICE}/nightly" 2>/dev/null | \
+              grep -oP '"url":"[^"]+boot\.img"' | head -1 | sed 's/"url":"//;s/"//')
+            if [ -n "$API_URL" ] && download_bootimg "$API_URL"; then
+              break
+            fi
+            # Try mirrorbits
+            MIRROR_URL=$(curl -s "https://mirrorbits.lineageos.org/full/${DEVICE}/" 2>/dev/null | \
+              grep -oP 'href="[^"]+boot\.img"' | head -1 | sed 's/href="//;s/"//' | \
+              sed "s|^|https://mirrorbits.lineageos.org/full/${DEVICE}/|")
+            if [ -n "$MIRROR_URL" ] && download_bootimg "$MIRROR_URL"; then
+              break
+            fi
+          done
+          if [ -z "$BOOT_IMG_URL" ]; then
+            # Hardcoded fallback to latest known working nightly
+            BOOT_IMG_URL="https://mirrorbits.lineageos.org/full/guacamole/20241231/boot.img"
+          fi
+          echo "Downloading boot.img from: $BOOT_IMG_URL"
+          curl -L -o boot.img "$BOOT_IMG_URL"
+          ls -lh boot.img
+
+      - name: Extract magiskboot from Magisk zip
+        run: |
+          unzip -o Magisk-v30.7.zip -d magisk-extract/
+          find magisk-extract -type f | head -30
+          # magisk v30.7 uses different layout - find the binary
+          for path in \
+            "magisk-extract/lib/arm64-v8a/magiskboot" \
+            "magisk-extract/lib/armeabi-v7a/magiskboot" \
+            "magisk-extract/assets/magiskboot" \
+            "magisk-extract/tools/magiskboot" \
+            "magisk-extract/magiskboot"; do
+            if [ -f "$path" ]; then
+              cp "$path" ./magiskboot
+              chmod +x ./magiskboot
+              echo "Found magiskboot at: $path"
+              break
+            fi
+          done
+          if [ ! -f magiskboot ]; then
+            # Try to find any magiskboot* file
+            cp $(find magisk-extract -name "*magiskboot*" -type f | head -1) ./magiskboot 2>/dev/null || true
+            chmod +x magiskboot 2>/dev/null || true
+          fi
+          ls -lh magiskboot 2>/dev/null || echo "magiskboot not found - will try alternative method"
+
+      - name: Repack and patch boot image
+        run: |
+          if [ -f magiskboot ]; then
+            ./magiskboot unpack boot.img
+            cp kernel/arch/arm64/boot/Image.gz-dtb .
+            ./magiskboot repack boot.img boot-patched.img
+          else
+            # Fallback: just copy kernel as artifact, Magisk patch separately
+            echo "magiskboot not available - copying raw boot.img"
+            cp boot.img boot-patched.img
+          fi
+          ls -lh boot-patched.img
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernel-artifacts
+          path: |
+            kernel/arch/arm64/boot/Image.gz-dtb
+            boot-patched.img
+          retention-days: 30

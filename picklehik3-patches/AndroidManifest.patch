@@ -1,0 +1,20 @@
+--- a/app/src/main/AndroidManifest.xml
++++ b/app/src/main/AndroidManifest.xml
+@@ -32,6 +32,17 @@
+             android:configChanges="orientation|screenSize|keyboard|keyboardHidden">
+         </activity>
+ 
++        <activity
++            android:name=".DesktopActivity"
++            android:excludeFromRecents="true"
++            android:launchMode="singleInstance"
++            android:configChanges="orientation|screenSize|keyboard|navigation">
++            <intent-filter>
++                <action android:name="android.intent.action.MAIN" />
++                <category android:name="android.intent.category.SECONDARY_HOME" />
++            </intent-filter>
++        </activity>
++
+         <service
+             android:name=".TermuxService"
+             android:exported="false">

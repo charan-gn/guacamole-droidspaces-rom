@@ -1,0 +1,27 @@
+# AOSP build output
+out/
+
+# repo tool
+.repo/
+
+# Android SDK
+android-sdk/
+
+# Toolchains
+toolchain/
+gcc-toolchain/
+
+# Build intermediates
+*.apk
+*.img
+*.zip
+mykey.jks
+boot.img
+magiskboot
+magisk-extract/
+
+# IDE
+.idea/
+*.iml
+.gradle/
+local.properties

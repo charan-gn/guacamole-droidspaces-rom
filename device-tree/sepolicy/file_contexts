@@ -1,0 +1,5 @@
+# DroidSpaces container root filesystem location
+# This marks /data/local/chroot-distro and all files within it
+# as app_data_file so that DroidSpaces (system_app) can execute
+# binaries (bash, systemd, etc.) inside the chroot.
+/data/local/chroot-distro(/.*)?    u:object_r:app_data_file:s0
