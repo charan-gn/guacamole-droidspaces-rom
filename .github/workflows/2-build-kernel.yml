@@ -82,6 +82,9 @@ jobs:
       - name: Copy kernel config
         run: |
           cp kernel-config-backup kernel/.config
+          # NDK clang r416183b doesn't support -fstack-protector-strong
+          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' kernel/.config
+          sed -i 's/# CONFIG_CC_STACKPROTECTOR_REGULAR is not set/CONFIG_CC_STACKPROTECTOR_REGULAR=y/' kernel/.config
 
       - name: Configure kernel
         run: |
