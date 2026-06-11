@@ -104,6 +104,10 @@ jobs:
           sed -i '/static inline int group_show.*{return 0};/s/{return 0};/{return 0;}/' \
             kernel/sched/sched.h
 
+          # ── Fix rb_glfragment_gap not in struct vm_area_struct ────
+          sed -i 's/largest_gap_gpu = vma->rb_glfragment_gap;/largest_gap_gpu = 0;/' \
+            drivers/gpu/msm/kgsl.c
+
           # ── Override -Werror globally ─────────────────────────────────
           echo 'KBUILD_CFLAGS += -Wno-error' >> Makefile
 
