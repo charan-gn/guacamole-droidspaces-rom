@@ -164,11 +164,6 @@ jobs:
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
-            LD=$CLANG_DIR/bin/ld.lld \
-            AR=$CLANG_DIR/bin/llvm-ar \
-            NM=$CLANG_DIR/bin/llvm-nm \
-            OBJCOPY=$CLANG_DIR/bin/llvm-objcopy \
-            STRIP=$CLANG_DIR/bin/llvm-strip \
             HOSTCC=gcc \
             olddefconfig
 
@@ -180,11 +175,6 @@ jobs:
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
-            LD=$CLANG_DIR/bin/ld.lld \
-            AR=$CLANG_DIR/bin/llvm-ar \
-            NM=$CLANG_DIR/bin/llvm-nm \
-            OBJCOPY=$CLANG_DIR/bin/llvm-objcopy \
-            STRIP=$CLANG_DIR/bin/llvm-strip \
             HOSTCC=gcc \
             KCFLAGS="-Wno-error=unknown-warning-option \
                      -Wno-format -Wno-return-type -Wno-implicit-int \
