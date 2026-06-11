@@ -135,53 +135,40 @@ jobs:
       - name: Install aarch64 cross tools from apt
         run: |
           sudo apt install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
-          echo "CROSS_TOOLS=$(dirname $(which aarch64-linux-gnu-gcc))" >> $GITHUB_ENV
 
-      - name: Fetch NDK Clang r416183b
+      - name: Fetch NDK Clang r416183b (sparse checkout)
         run: |
-          git clone \
-            --filter=blob:none \
-            --no-checkout \
-            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86 \
-            toolchain
+          mkdir -p toolchain
           cd toolchain
-          git sparse-checkout init --cone
-          git sparse-checkout set clang-r416183b
-          git checkout master
+          git init
+          git remote add origin \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
+          git config core.sparseCheckout true
+          echo "clang-r416183b/" >> .git/info/sparse-checkout
+          git fetch --depth=1 origin master
+          git checkout origin/master
           ls clang-r416183b/bin/clang && echo "Clang OK" || echo "CLANG MISSING"
-          ls clang-r416183b/bin/ld.lld && echo "lld OK" || echo "LLD MISSING"
           echo "CLANG_DIR=$(pwd)/clang-r416183b" >> $GITHUB_ENV
 
       - name: Run olddefconfig
         run: |
-          export PATH="$CLANG_DIR/bin:$CROSS_TOOLS:$PATH"
+          export PATH="$CLANG_DIR/bin:$PATH"
           cd kernel
           make ARCH=arm64 \
-            CC=$CLANG_DIR/bin/clang \
+            CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            LD=$CLANG_DIR/bin/ld.lld \
-            AR=$CLANG_DIR/bin/llvm-ar \
-            NM=$CLANG_DIR/bin/llvm-nm \
-            OBJCOPY=$CLANG_DIR/bin/llvm-objcopy \
-            STRIP=$CLANG_DIR/bin/llvm-strip \
             HOSTCC=gcc \
             olddefconfig
 
       - name: Build kernel
         run: |
-          export PATH="$CLANG_DIR/bin:$CROSS_TOOLS:$PATH"
+          export PATH="$CLANG_DIR/bin:$PATH"
           cd kernel
           make ARCH=arm64 \
-            CC=$CLANG_DIR/bin/clang \
+            CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            LD=$CLANG_DIR/bin/ld.lld \
-            AR=$CLANG_DIR/bin/llvm-ar \
-            NM=$CLANG_DIR/bin/llvm-nm \
-            OBJCOPY=$CLANG_DIR/bin/llvm-objcopy \
-            STRIP=$CLANG_DIR/bin/llvm-strip \
-            OBJDUMP=$CLANG_DIR/bin/llvm-objdump \
             HOSTCC=gcc \
             HOSTCXX=g++ \
             KCFLAGS="-Wno-error=unknown-warning-option \
