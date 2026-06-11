@@ -1,4 +1,4 @@
-name: 2 - Build Kernel + Magisk Boot Image
+name: 2 - Build Kernel
 
 on:
   workflow_dispatch:
@@ -6,8 +6,10 @@ on:
 jobs:
   build-kernel:
     runs-on: ubuntu-22.04
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Clone LOS 18.1 kernel
         run: |
@@ -15,7 +17,7 @@ jobs:
             https://github.com/LineageOS/android_kernel_oneplus_sm8150 \
             kernel/
 
-      - name: Fetch kernel patches and config
+      - name: Fetch patches and config from charan-gn/guacamole-droidspaces-kernel
         run: |
           git clone --depth=1 \
             https://github.com/charan-gn/guacamole-droidspaces-kernel.git \
@@ -26,81 +28,79 @@ jobs:
       - name: Apply kernel patches
         run: |
           cd kernel
-          # Try to apply all patches; report but don't fail on rejects
           git apply ../kernel-patches.diff 2>&1 || \
             git apply --reject ../kernel-patches.diff 2>&1 || true
-          # Show any rejected patches
           for rej in $(find . -name "*.rej" 2>/dev/null); do
             echo "=== REJECTED: $rej ==="
             cat "$rej"
           done
 
-      - name: Apply LOS 18.1 specific fixes
+      - name: Apply manual source fixes
         run: |
           cd kernel
 
-          # ── Remove opslalib (creates circular deps + undefined symbols) ───
+          # ── Remove opslalib ───────────────────────────────────────────
           sed -i 's/ opslalib\///' Makefile
 
-          # ── Stub OnePlus undefined symbols at link ───────────────────────
+          # ── Stub OnePlus undefined symbols ────────────────────────────
           printf "\nint game_start_state = 0;\nint game_rtt_wan_detect_flag = 0;\nint rtt_rear = 0;\nint sla_switch_enable = 0;\n" \
             >> net/opsla/op_sla.c
 
-          # ── Fix all trace header include paths ───────────────────────────
+          # ── Fix all trace header include paths ────────────────────────
           find drivers -name "*trace.c" | sed 's|/[^/]*$||' | sort -u | while read dir; do
             if ! grep -q 'ccflags-y.*-I\$(src)' "$dir/Makefile" 2>/dev/null; then
               echo "ccflags-y += -I\$(src)" >> "$dir/Makefile"
             fi
           done
 
-          # ── Fix IPA FORTIFY_SOURCE ───────────────────────────────────────
+          # ── Fix IPA FORTIFY_SOURCE ────────────────────────────────────
           echo 'CFLAGS_ipa.o := -U__FORTIFY_SOURCE' >> drivers/platform/msm/ipa/ipa_v3/Makefile
           echo 'ccflags-y += -U__FORTIFY_SOURCE'    >> drivers/platform/msm/ipa/ipa_v3/Makefile
 
-          # ── Fix IPA subdirectory trace headers ──────────────────────────
+          # ── Fix IPA subdirectory trace headers ───────────────────────
           find drivers/platform/msm/ipa -name "Makefile" | while read f; do
             if ! grep -q 'ccflags-y.*-I\$(src)' "$f"; then
               echo "ccflags-y += -I\$(src)" >> "$f"
             fi
           done
 
-          # ── Fix mdss pll trace header ────────────────────────────────────
+          # ── Fix mdss pll trace header ─────────────────────────────────
           if ! grep -q 'ccflags-y.*-I\$(src)' drivers/clk/qcom/mdss/Makefile 2>/dev/null; then
             echo "ccflags-y += -I\$(src)" >> drivers/clk/qcom/mdss/Makefile
           fi
 
-          # ── Fix camera core headers ──────────────────────────────────────
+          # ── Fix camera core headers ───────────────────────────────────
           echo "ccflags-y += -I\$(src)"             >> drivers/media/platform/msm/camera/cam_core/Makefile
           echo "ccflags-y += -I\$(src)/../cam_utils" >> drivers/media/platform/msm/camera/cam_core/Makefile
 
-          # ── Fix GPU msm trace headers ────────────────────────────────────
+          # ── Fix GPU msm trace headers ─────────────────────────────────
           echo "ccflags-y += -I\$(src)" >> drivers/gpu/msm/Makefile
 
-          # ── Fix power supply Qualcomm warnings ──────────────────────────
+          # ── Fix power supply Qualcomm warnings ───────────────────────
           echo "ccflags-y += -Wno-error -Wno-format -Wno-return-type -Wno-pointer-to-int-cast -Wno-implicit-int" \
             >> drivers/power/supply/qcom/Makefile
 
-          # ── Fix hall sensor strict-prototypes ───────────────────────────
-          echo "ccflags-y += -Wno-strict-prototypes" \
-            >> drivers/tri_state_key/Makefile
-          echo "ccflags-y += -Wno-strict-prototypes" \
-            >> drivers/tri_state_key/ist_hall_ic/Makefile
-          echo "ccflags-y += -Wno-strict-prototypes" \
-            >> drivers/tri_state_key/hall_ic/Makefile
+          # ── Fix hall sensor strict-prototypes ────────────────────────
+          echo "ccflags-y += -Wno-strict-prototypes" >> drivers/tri_state_key/Makefile
+          echo "ccflags-y += -Wno-strict-prototypes" >> drivers/tri_state_key/hall_ic/Makefile
 
-          # ── Fix .bss.rtic relocation truncation ────────────────────────
+          # ── Fix classmap.h missing socket include (patch rejection) ───
+          sed -i '/#include <linux\/capability.h>/a #include <linux\/socket.h>' \
+            security/selinux/include/classmap.h
+
+          # ── Fix .bss.rtic relocation truncation ──────────────────────
           sed -i 's/#define __rticdata  __attribute__((section(".bss.rtic")))/#define __rticdata/' \
             include/linux/init.h
 
-          # ── Fix proc_page_hot_count_operations undefined ────────────────
+          # ── Fix proc_page_hot_count_operations undefined ──────────────
           sed -i '3288i const struct file_operations proc_page_hot_count_operations = { };' \
             fs/proc/base.c
 
-          # ── Nullify __bad_copy_to/from in thread_info.h ──────────────────
+          # ── Nullify __bad_copy_to/from ────────────────────────────────
           sed -i 's/__bad_copy_from();/(void)0;/g' include/linux/thread_info.h
           sed -i 's/__bad_copy_to();/(void)0;/g'   include/linux/thread_info.h
 
-          # ── Override -Werror (clang has stricter warnings than GCC) ──────
+          # ── Override -Werror globally ─────────────────────────────────
           echo 'KBUILD_CFLAGS += -Wno-error' >> Makefile
 
       - name: Apply kernel config
@@ -108,7 +108,7 @@ jobs:
           cd kernel
           cp ../kernel-config-backup .config
 
-          # ── Add missing DroidSpaces config flags ─────────────────────────
+          # ── Add DroidSpaces config flags ──────────────────────────────
           scripts/config \
             --enable  POSIX_MQUEUE \
             --enable  CGROUP_PIDS \
@@ -126,22 +126,13 @@ jobs:
             --enable  NF_NAT_REDIRECT \
             --disable ANDROID_PARANOID_NETWORK
 
-          # KALLSYMS_BASE_RELATIVE has default y on arm64 — force it n
-          sed -i '/^config KALLSYMS_BASE_RELATIVE$/,/^[a-z]/s/default.*/default n/' init/Kconfig
-
-          # ── Disable CC_STACKPROTECTOR_STRONG (clang check fails) ─────────
+          # ── Disable CC_STACKPROTECTOR_STRONG ─────────────────────────
           sed -i '/CONFIG_CC_STACKPROTECTOR_STRONG/d' .config
           sed -i '/^CONFIG_CC_STACKPROTECTOR=y/d' .config
           sed -i '/^CONFIG_CC_STACKPROTECTOR_REGULAR=y/d' .config
           echo 'CONFIG_CC_STACKPROTECTOR_NONE=y' >> .config
 
-          # Configure with NDK clang
-          make ARCH=arm64 \
-            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            olddefconfig
-
-      - name: Install NDK clang r416183b
+      - name: Fetch NDK Clang r416183b (sparse checkout)
         run: |
           mkdir -p toolchain
           cd toolchain
@@ -150,12 +141,11 @@ jobs:
             https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
           git config core.sparseCheckout true
           echo "clang-r416183b/" >> .git/info/sparse-checkout
-          # Use master branch (AOSP convention)
           git fetch --depth=1 origin master
           git checkout origin/master
           echo "CLANG_DIR=$(pwd)/clang-r416183b" >> $GITHUB_ENV
 
-      - name: Install GCC 4.9 aarch64 toolchain
+      - name: Fetch GCC 4.9 aarch64 toolchain
         run: |
           mkdir -p gcc-toolchain
           cd gcc-toolchain
@@ -166,90 +156,61 @@ jobs:
           git checkout origin/master
           echo "GCC_DIR=$(pwd)" >> $GITHUB_ENV
 
+      - name: Run olddefconfig
+        run: |
+          export PATH="$CLANG_DIR/bin:$GCC_DIR/bin:$PATH"
+          cd kernel
+          make ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            LD=$CLANG_DIR/bin/ld.lld \
+            AR=$CLANG_DIR/bin/llvm-ar \
+            NM=$CLANG_DIR/bin/llvm-nm \
+            OBJCOPY=$CLANG_DIR/bin/llvm-objcopy \
+            STRIP=$CLANG_DIR/bin/llvm-strip \
+            HOSTCC=gcc \
+            olddefconfig
+
       - name: Build kernel
         run: |
           export PATH="$CLANG_DIR/bin:$GCC_DIR/bin:$PATH"
           cd kernel
           make ARCH=arm64 \
-            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
+            LD=$CLANG_DIR/bin/ld.lld \
+            AR=$CLANG_DIR/bin/llvm-ar \
+            NM=$CLANG_DIR/bin/llvm-nm \
+            OBJCOPY=$CLANG_DIR/bin/llvm-objcopy \
+            STRIP=$CLANG_DIR/bin/llvm-strip \
+            HOSTCC=gcc \
             KCFLAGS="-Wno-error=unknown-warning-option \
                      -Wno-format -Wno-return-type -Wno-implicit-int \
                      -Wno-unused-but-set-variable -Wno-unused-variable \
                      -U__FORTIFY_SOURCE" \
             -j$(nproc) 2>&1 | tee build.log
-          echo "--- LAST 30 LINES ---"
-          tail -30 build.log
+          echo "--- LAST 50 LINES ---"
+          tail -50 build.log
 
-      - name: Download latest LOS 18.1 boot.img
+      - name: Collect kernel artifact
         run: |
-          BOOT_IMG_URL=""
-          download_bootimg() {
-            local url="$1"
-            echo "Trying: $url"
-            if curl -sIL "$url" 2>/dev/null | head -20 | grep -q "200\|302"; then
-              BOOT_IMG_URL="$url"
-              return 0
-            fi
-            return 1
-          }
-          for DEVICE in guacamole guacamoleb guacamolec; do
-            # Try API v1 for latest nightly
-            API_URL=$(curl -s "https://download.lineageos.org/api/v1/${DEVICE}/nightly" 2>/dev/null | \
-              grep -oP '"url":"[^"]+boot\.img"' | head -1 | sed 's/"url":"//;s/"//')
-            if [ -n "$API_URL" ] && download_bootimg "$API_URL"; then
-              break
-            fi
-            # Try mirrorbits
-            MIRROR_URL=$(curl -s "https://mirrorbits.lineageos.org/full/${DEVICE}/" 2>/dev/null | \
-              grep -oP 'href="[^"]+boot\.img"' | head -1 | sed 's/href="//;s/"//' | \
-              sed "s|^|https://mirrorbits.lineageos.org/full/${DEVICE}/|")
-            if [ -n "$MIRROR_URL" ] && download_bootimg "$MIRROR_URL"; then
-              break
-            fi
-          done
-          if [ -z "$BOOT_IMG_URL" ]; then
-            # Hardcoded fallback to latest known working nightly
-            BOOT_IMG_URL="https://mirrorbits.lineageos.org/full/guacamole/20241231/boot.img"
-          fi
-          echo "Downloading boot.img from: $BOOT_IMG_URL"
-          curl -L -o boot.img "$BOOT_IMG_URL"
-          ls -lh boot.img
+          ls -lh kernel/arch/arm64/boot/Image.gz-dtb
+          cp kernel/arch/arm64/boot/Image.gz-dtb .
 
-      - name: Extract magiskboot (x86_64) from Magisk APK
-        run: |
-          # Download Magisk APK (has native x86_64 libmagiskboot)
-          curl -sL -o Magisk-v30.7.apk \
-            https://github.com/topjohnwu/Magisk/releases/download/v30.7/Magisk-v30.7.apk
-          unzip -o Magisk-v30.7.apk lib/x86_64/libmagiskboot.so
-          cp lib/x86_64/libmagiskboot.so magiskboot
-          chmod +x magiskboot
-          ls -lh magiskboot
-
-      - name: Repack and patch boot image
-        run: |
-          if [ -f magiskboot ]; then
-            ./magiskboot unpack boot.img
-            cp kernel/arch/arm64/boot/Image.gz-dtb .
-            ./magiskboot repack boot.img boot-patched.img
-          else
-            # Fallback: just copy kernel as artifact, Magisk patch separately
-            echo "magiskboot not available - copying raw boot.img"
-            cp boot.img boot-patched.img
-          fi
-          ls -lh boot-patched.img
-
-      - uses: actions/upload-artifact@v4
+      - name: Upload Image.gz-dtb
+        uses: actions/upload-artifact@v4
         with:
-          name: kernel-artifacts
-          path: |
-            kernel/arch/arm64/boot/Image.gz-dtb
-            boot-patched.img
+          name: kernel-image
+          path: Image.gz-dtb
           retention-days: 30
 
-      - name: Upload build log
+      - name: Upload build log (always)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: kernel-build-log
           path: kernel/build.log
+          if-no-files-found: warn
+          retention-days: 30
