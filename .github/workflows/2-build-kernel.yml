@@ -146,7 +146,7 @@ jobs:
 
       - name: Install aarch64 cross tools from apt
         run: |
-          sudo apt install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+          sudo apt install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu lld
 
       - name: Fetch NDK Clang r416183b (sparse checkout)
         run: |
@@ -170,6 +170,7 @@ jobs:
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
+            LD=ld.lld \
             HOSTCC=gcc \
             olddefconfig
 
@@ -181,6 +182,7 @@ jobs:
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
+            LD=ld.lld \
             HOSTCC=gcc \
             HOSTCXX=g++ \
             KCFLAGS="-Wno-error=unknown-warning-option \
