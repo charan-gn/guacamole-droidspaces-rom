@@ -108,9 +108,9 @@ jobs:
           sed -i 's/largest_gap_gpu = vma->rb_glfragment_gap;/largest_gap_gpu = 0;/' \
             drivers/gpu/msm/kgsl.c
 
-          # ── Stub missing IM (interactive mode) functions in houston ──
-          printf '\n/* Stubs for missing IM functions */\n#define IM_UX 0\n#define IM_GL 1\n#define IM_VK 2\nstatic inline void im_set_flag_current(int flag) {}\nstatic inline void im_set_flag(struct task_struct *p, int flag) {}\nstatic inline void im_unset_flag(struct task_struct *p, int flag) {}\n' \
-            >> include/linux/oem/houston.h
+          # ── Fix houston.c missing include for IM functions (in im.h) ─
+          sed -i '/#include <linux\/oem\/houston.h>/a #include <linux\/oem\/im.h>' \
+            coretech/houston/houston.c
 
           # ── Override -Werror globally ─────────────────────────────────
           echo 'KBUILD_CFLAGS += -Wno-error' >> Makefile
