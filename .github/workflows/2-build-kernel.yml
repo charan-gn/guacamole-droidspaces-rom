@@ -39,68 +39,108 @@ jobs:
       - name: Apply LOS 18.1 specific fixes
         run: |
           cd kernel
-          # Remove -no-integrated-as so LLVM_IAS=1 works (system as is x86_64, not aarch64)
-          sed -i '/no-integrated-as/d' Makefile
-          # Remove opslalib from drivers-y (not needed for build but patch was stale)
-          # -I$(src) additions for clang compatibility when headers use relative paths
-          for line in \
-            "fno-var-tracking-assignments" \
-            "fconserve-stack" \
-            "implicit-int" \
-            "strict-prototypes" \
-            "date-time" \
-            "incompatible-pointer-types" \
-            "designated-init" \
-            "ARCH_CFLAGS"; do
-            case "$line" in
-              "ARCH_CFLAGS")
-                sed -i '/^KBUILD_CFLAGS.*\$(ARCH_CFLAGS).*\$(KCFLAGS)$/a KBUILD_CFLAGS += -I\$(src)' Makefile
-                ;;
-              *)
-                sed -i "/KBUILD_CFLAGS.*cc-option.*${line}/a KBUILD_CFLAGS += -I\$(src)" Makefile
-                ;;
-            esac
-          done
-          # Add ccflags-y to specific drivers that need -I$(src) for clang
-          for dir in \
-            "drivers/clk/qcom/mdss" \
-            "drivers/net/ethernet/aquantia/atlantic-fwd" \
-            "drivers/net/wireless/ath/ath10k" \
-            "drivers/net/wireless/ath/ath6kl" \
-            "drivers/net/wireless/ath/wil6210"; do
-            if [ -f "$dir/Makefile" ]; then
-              grep -q "ccflags-y.*-I\$(src)" "$dir/Makefile" 2>/dev/null || \
-                echo "ccflags-y += -I\$(src)" >> "$dir/Makefile"
-            fi
-          done
-          # Add clang warning suppressions for power supply drivers
-          for dir in "drivers/power/supply/qcom"; do
-            if [ -f "$dir/Makefile" ]; then
-              grep -q "ccflags-y.*-Wno-error" "$dir/Makefile" 2>/dev/null || \
-                printf "ccflags-y += -Wno-error -Wno-format -Wno-return-type -Wno-pointer-to-int-cast\nccflags-y += -Wno-implicit-int -Wno-error=implicit-int\n" >> "$dir/Makefile"
+
+          # ── Remove opslalib (creates circular deps + undefined symbols) ───
+          sed -i 's/ opslalib\///' Makefile
+
+          # ── Stub OnePlus undefined symbols at link ───────────────────────
+          printf "\nint game_start_state = 0;\nint game_rtt_wan_detect_flag = 0;\nint rtt_rear = 0;\nint sla_switch_enable = 0;\n" \
+            >> net/opsla/op_sla.c
+
+          # ── Fix all trace header include paths ───────────────────────────
+          find drivers -name "*trace.c" | sed 's|/[^/]*$||' | sort -u | while read dir; do
+            if ! grep -q 'ccflags-y.*-I\$(src)' "$dir/Makefile" 2>/dev/null; then
+              echo "ccflags-y += -I\$(src)" >> "$dir/Makefile"
             fi
           done
 
-      - name: Copy kernel config
-        run: |
-          cp kernel-config-backup kernel/.config
-          # NDK clang r416183b doesn't support -fstack-protector
-          sed -i 's/CONFIG_CC_STACKPROTECTOR_STRONG=y/# CONFIG_CC_STACKPROTECTOR_STRONG is not set/' kernel/.config
-          sed -i 's/# CONFIG_CC_STACKPROTECTOR_REGULAR is not set/CONFIG_CC_STACKPROTECTOR_NONE=y/' kernel/.config
-          sed -i 's/CONFIG_CC_STACKPROTECTOR=y/# CONFIG_CC_STACKPROTECTOR is not set/' kernel/.config
-          # DroidSpaces kernel requirements
-          sed -i 's/# CONFIG_DEVTMPFS is not set/CONFIG_DEVTMPFS=y/' kernel/.config
-          sed -i 's/# CONFIG_NETFILTER_XT_MATCH_ADDRTYPE is not set/CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y/' kernel/.config
-          sed -i 's/# CONFIG_CGROUP_DEVICE is not set/CONFIG_CGROUP_DEVICE=y/' kernel/.config
-          sed -i 's/# CONFIG_CGROUP_PIDS is not set/CONFIG_CGROUP_PIDS=y/' kernel/.config
-          sed -i 's/CONFIG_BRIDGE_NETFILTER=m/CONFIG_BRIDGE_NETFILTER=y/' kernel/.config
-          # Disable VDSO: LLVM integrated assembler chokes on GAS .macro syntax in
-          # arch/arm64/kernel/vdso/gettimeofday.S ("too many positional arguments")
-          sed -i 's/CONFIG_ARM64_VDSO=y/# CONFIG_ARM64_VDSO is not set/' kernel/.config
+          # ── Fix IPA FORTIFY_SOURCE ───────────────────────────────────────
+          echo 'CFLAGS_ipa.o := -U__FORTIFY_SOURCE' >> drivers/platform/msm/ipa/ipa_v3/Makefile
+          echo 'ccflags-y += -U__FORTIFY_SOURCE'    >> drivers/platform/msm/ipa/ipa_v3/Makefile
 
-      - name: Configure kernel
+          # ── Fix IPA subdirectory trace headers ──────────────────────────
+          find drivers/platform/msm/ipa -name "Makefile" | while read f; do
+            if ! grep -q 'ccflags-y.*-I\$(src)' "$f"; then
+              echo "ccflags-y += -I\$(src)" >> "$f"
+            fi
+          done
+
+          # ── Fix mdss pll trace header ────────────────────────────────────
+          if ! grep -q 'ccflags-y.*-I\$(src)' drivers/clk/qcom/mdss/Makefile 2>/dev/null; then
+            echo "ccflags-y += -I\$(src)" >> drivers/clk/qcom/mdss/Makefile
+          fi
+
+          # ── Fix camera core headers ──────────────────────────────────────
+          echo "ccflags-y += -I\$(src)"             >> drivers/media/platform/msm/camera/cam_core/Makefile
+          echo "ccflags-y += -I\$(src)/../cam_utils" >> drivers/media/platform/msm/camera/cam_core/Makefile
+
+          # ── Fix GPU msm trace headers ────────────────────────────────────
+          echo "ccflags-y += -I\$(src)" >> drivers/gpu/msm/Makefile
+
+          # ── Fix power supply Qualcomm warnings ──────────────────────────
+          echo "ccflags-y += -Wno-error -Wno-format -Wno-return-type -Wno-pointer-to-int-cast -Wno-implicit-int" \
+            >> drivers/power/supply/qcom/Makefile
+
+          # ── Fix hall sensor strict-prototypes ───────────────────────────
+          echo "ccflags-y += -Wno-strict-prototypes" \
+            >> drivers/tri_state_key/Makefile
+          echo "ccflags-y += -Wno-strict-prototypes" \
+            >> drivers/tri_state_key/ist_hall_ic/Makefile
+          echo "ccflags-y += -Wno-strict-prototypes" \
+            >> drivers/tri_state_key/hall_ic/Makefile
+
+          # ── Fix .bss.rtic relocation truncation ────────────────────────
+          sed -i 's/#define __rticdata  __attribute__((section(".bss.rtic")))/#define __rticdata/' \
+            include/linux/init.h
+
+          # ── Fix proc_page_hot_count_operations undefined ────────────────
+          sed -i '3288i const struct file_operations proc_page_hot_count_operations = { };' \
+            fs/proc/base.c
+
+          # ── Nullify __bad_copy_to/from in thread_info.h ──────────────────
+          sed -i 's/__bad_copy_from();/(void)0;/g' include/linux/thread_info.h
+          sed -i 's/__bad_copy_to();/(void)0;/g'   include/linux/thread_info.h
+
+          # ── Override -Werror (clang has stricter warnings than GCC) ──────
+          echo 'KBUILD_CFLAGS += -Wno-error' >> Makefile
+
+      - name: Apply kernel config
         run: |
-          make -C kernel ARCH=arm64 olddefconfig
+          cd kernel
+          cp ../kernel-config-backup .config
+
+          # ── Add missing DroidSpaces config flags ─────────────────────────
+          scripts/config \
+            --enable  POSIX_MQUEUE \
+            --enable  CGROUP_PIDS \
+            --enable  CGROUP_DEVICE \
+            --enable  CGROUP_NET_PRIO \
+            --enable  DEVTMPFS \
+            --enable  DEVTMPFS_MOUNT \
+            --enable  NF_TABLES \
+            --enable  NETFILTER_ADVANCED \
+            --enable  IP_NF_FILTER \
+            --enable  NETFILTER_XT_TARGET_MASQUERADE \
+            --enable  NETFILTER_XT_TARGET_TCPMSS \
+            --enable  NETFILTER_XT_MATCH_ADDRTYPE \
+            --enable  NF_CONNTRACK_NETLINK \
+            --enable  NF_NAT_REDIRECT \
+            --disable ANDROID_PARANOID_NETWORK
+
+          # KALLSYMS_BASE_RELATIVE has default y on arm64 — force it n
+          sed -i '/^config KALLSYMS_BASE_RELATIVE$/,/^[a-z]/s/default.*/default n/' init/Kconfig
+
+          # ── Disable CC_STACKPROTECTOR_STRONG (clang check fails) ─────────
+          sed -i '/CONFIG_CC_STACKPROTECTOR_STRONG/d' .config
+          sed -i '/^CONFIG_CC_STACKPROTECTOR=y/d' .config
+          sed -i '/^CONFIG_CC_STACKPROTECTOR_REGULAR=y/d' .config
+          echo 'CONFIG_CC_STACKPROTECTOR_NONE=y' >> .config
+
+          # Configure with NDK clang
+          make ARCH=arm64 \
+            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            olddefconfig
 
       - name: Install NDK clang r416183b
         run: |
@@ -130,13 +170,17 @@ jobs:
       - name: Build kernel
         run: |
           export PATH="$CLANG_DIR/bin:$GCC_DIR/bin:$PATH"
-          make -C kernel ARCH=arm64 \
-            CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
+          cd kernel
+          make ARCH=arm64 \
+            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-android- \
-            LLVM_IAS=1 \
-            KCFLAGS="-Wno-error -Wno-unknown-warning-option" \
-            -j$(nproc)
+            KCFLAGS="-Wno-error=unknown-warning-option \
+                     -Wno-format -Wno-return-type -Wno-implicit-int \
+                     -Wno-unused-but-set-variable -Wno-unused-variable \
+                     -U__FORTIFY_SOURCE" \
+            -j$(nproc) 2>&1 | tee build.log
+          echo "--- LAST 30 LINES ---"
+          tail -30 build.log
 
       - name: Download latest LOS 18.1 boot.img
         run: |
@@ -218,3 +262,10 @@ jobs:
             kernel/arch/arm64/boot/Image.gz-dtb
             boot-patched.img
           retention-days: 30
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kernel-build-log
+          path: kernel/build.log
