@@ -1,0 +1,198 @@
+name: 3 - Build LineageOS 18.1 ROM
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-rom:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          echo "=== Disk before cleanup ==="
+          df -h
+          sudo rm -rf /usr/local/lib/android /opt/android-sdk /usr/share/android-sdk 2>/dev/null || true
+          sudo rm -rf /usr/share/dotnet /opt/dotnet 2>/dev/null || true
+          sudo rm -rf /opt/ghc /usr/share/ghc 2>/dev/null || true
+          sudo apt-get remove -y --purge \
+            azure-cli firefox google-chrome-stable \
+            powershell mono-complete 2>/dev/null || true
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+          sudo docker system prune -af 2>/dev/null || true
+          sudo rm -rf /tmp/* /var/cache/* 2>/dev/null || true
+          sudo fallocate -l 4G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo "=== Disk after cleanup ==="
+          df -h
+          AVAIL=$(df --output=avail / | tail -1)
+          if [ "$AVAIL" -lt 60000000 ]; then
+            echo "WARNING: Less than 60GB available ($AVAIL KB) - may be tight"
+          fi
+
+      - name: Install AOSP build dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            bc bison build-essential ccache curl flex g++-multilib \
+            gcc-multilib git gnupg gperf imagemagick \
+            lib32ncurses5-dev lib32readline-dev lib32z1-dev \
+            libelf-dev liblz4-tool libncurses5 libncurses5-dev \
+            libsdl1.2-dev libssl-dev libxml2 libxml2-utils \
+            lzop pngcrush rsync schedtool squashfs-tools \
+            xsltproc zip zlib1g-dev \
+            libwxgtk3.0-gtk3-dev 2>/dev/null || \
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            bc bison build-essential ccache curl flex g++-multilib \
+            gcc-multilib git gnupg gperf imagemagick \
+            lib32ncurses-dev lib32readline-dev lib32z1-dev \
+            libelf-dev liblz4-tool libncurses5 \
+            libsdl1.2-dev libssl-dev libxml2 libxml2-utils \
+            lzop pngcrush rsync schedtool squashfs-tools \
+            xsltproc zip zlib1g-dev
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-8-jdk 2>/dev/null || true
+
+      - name: Install repo tool
+        run: |
+          mkdir -p ~/bin
+          curl -s https://storage.googleapis.com/git-repo-downloads/repo \
+            -o ~/bin/repo
+          chmod +x ~/bin/repo
+          echo "$HOME/bin" >> $GITHUB_PATH
+
+      - name: Configure git identity
+        run: |
+          git config --global user.email "${{ github.actor }}@users.noreply.github.com"
+          git config --global user.name "${{ github.actor }}"
+
+      - name: repo init
+        run: |
+          repo init \
+            -u https://github.com/LineageOS/android \
+            -b lineage-18.1 \
+            --depth=1 \
+            --groups=default,-mips,-x86,-darwin
+
+      - name: Create local manifest for guacamole
+        run: |
+          mkdir -p .repo/local_manifests
+          cat > .repo/local_manifests/guacamole.xml << 'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<manifest>
+  <remote name="github"
+          fetch="https://github.com/"
+          review="review.lineageos.org" />
+
+  <project name="LineageOS/android_device_oneplus_sm8150-common"
+           path="device/oneplus/sm8150-common"
+           remote="github"
+           revision="lineage-18.1" />
+
+  <project name="LineageOS/android_device_oneplus_guacamole"
+           path="device/oneplus/guacamole"
+           remote="github"
+           revision="lineage-18.1" />
+
+  <project name="LineageOS/android_kernel_oneplus_sm8150"
+           path="kernel/oneplus/sm8150"
+           remote="github"
+           revision="lineage-18.1" />
+
+  <project name="TheMuppets/proprietary_vendor_oneplus"
+           path="vendor/oneplus"
+           remote="github"
+           revision="lineage-18.1" />
+</manifest>
+EOF
+
+      - name: repo sync
+        run: |
+          repo sync -c --no-clone-bundle --no-tags -j4 --fail-fast
+
+      - name: Download PickleHik3 APK from workflow 1
+        uses: dawidd6/action-download-artifact@v4
+        with:
+          workflow: 1-build-picklehik3.yml
+          name: PickleHik3-signed
+          path: /tmp/picklehik3-artifact
+
+      - name: Download custom kernel from workflow 2
+        uses: dawidd6/action-download-artifact@v4
+        with:
+          workflow: 2-build-kernel.yml
+          name: Image.gz-dtb
+          path: /tmp/kernel-artifact
+
+      - name: Place APK in device tree
+        run: |
+          mkdir -p device/oneplus/guacamole/prebuilts/
+          cp /tmp/picklehik3-artifact/PickleHik3-signed.apk \
+             device/oneplus/guacamole/prebuilts/PickleHik3.apk
+
+      - name: Use prebuilt custom kernel
+        run: |
+          mkdir -p kernel/oneplus/sm8150/arch/arm64/boot/
+          cp /tmp/kernel-artifact/Image.gz-dtb kernel/oneplus/sm8150/arch/arm64/boot/
+
+      - name: Apply device.mk patch
+        run: |
+          cd device/oneplus/guacamole
+          git apply $GITHUB_WORKSPACE/device-tree/device.mk.patch || \
+            git apply --reject $GITHUB_WORKSPACE/device-tree/device.mk.patch
+
+      - name: Copy sepolicy
+        run: |
+          mkdir -p device/oneplus/guacamole/sepolicy
+          cp $GITHUB_WORKSPACE/device-tree/sepolicy/droidspaces.te \
+             device/oneplus/guacamole/sepolicy/
+          cp $GITHUB_WORKSPACE/device-tree/sepolicy/file_contexts \
+             device/oneplus/guacamole/sepolicy/
+
+      - name: Copy prebuilts Android.mk
+        run: |
+          cp $GITHUB_WORKSPACE/device-tree/prebuilts/Android.mk \
+             device/oneplus/guacamole/prebuilts/
+
+      - name: Setup ccache
+        run: |
+          CCACHE_DIR=/root/.ccache
+          echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=10G" >> $GITHUB_ENV
+          ccache -M 10G
+          ccache -z
+
+      - name: Build ROM
+        env:
+          TARGET_PREBUILT_KERNEL: kernel/oneplus/sm8150/arch/arm64/boot/Image.gz-dtb
+          BOARD_KERNEL_IMAGE_NAME: Image.gz-dtb
+          USE_CCACHE: 1
+        run: |
+          source build/envsetup.sh
+          lunch lineage_guacamole-userdebug
+          mka bacon -j$(nproc)
+
+      - name: Locate and verify flashable zip
+        run: |
+          ZIP=$(find out/target/product/guacamole/ -maxdepth 1 -name "lineage-*.zip" | head -1)
+          if [ -z "$ZIP" ]; then
+            # Try alternative naming pattern
+            ZIP=$(find out/target/product/guacamole/ -maxdepth 1 -name "*.zip" ! -name "*-ota-*.zip" | head -1)
+          fi
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: No flashable zip found in out/target/product/guacamole/"
+            ls -la out/target/product/guacamole/ 2>/dev/null || echo "Directory not found"
+            exit 1
+          fi
+          echo "ROM_ZIP=$ZIP" >> $GITHUB_ENV
+          echo "Found ROM: $ZIP"
+          ls -lh "$ZIP"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lineage-18.1-guacamole-CUSTOM
+          path: ${{ env.ROM_ZIP }}
+          retention-days: 30
