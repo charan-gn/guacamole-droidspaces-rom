@@ -138,6 +138,9 @@ jobs:
             --enable  NF_NAT_REDIRECT \
             --disable ANDROID_PARANOID_NETWORK
 
+          # ── Disable MODVERSIONS ──────────────────────────────────────
+          scripts/config --disable MODVERSIONS
+
           # ── Disable CC_STACKPROTECTOR_STRONG ─────────────────────────
           sed -i '/CONFIG_CC_STACKPROTECTOR_STRONG/d' .config
           sed -i '/^CONFIG_CC_STACKPROTECTOR=y/d' .config
