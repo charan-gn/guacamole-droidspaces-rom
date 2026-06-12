@@ -87,7 +87,7 @@ jobs:
           fetch="https://github.com/"
           review="review.lineageos.org" />
 
-  <project name="LineageOS/android_device_oneplus_sm8150"
+  <project name="LineageOS/android_device_oneplus_sm8150-common"
            path="device/oneplus/sm8150-common"
            remote="github"
            revision="lineage-18.1" />
@@ -114,16 +114,29 @@ EOF
           repo sync -c --no-clone-bundle --no-tags -j4 --fail-fast
 
       - name: Download PickleHik3 APK from workflow 1
-        uses: actions/download-artifact@v4
+        uses: dawidd6/action-download-artifact@v4
         with:
+          workflow: 1-build-picklehik3.yml
           name: PickleHik3-signed
           path: /tmp/picklehik3-artifact
+
+      - name: Download custom kernel from workflow 2
+        uses: dawidd6/action-download-artifact@v4
+        with:
+          workflow: 2-build-kernel.yml
+          name: Image.gz-dtb
+          path: /tmp/kernel-artifact
 
       - name: Place APK in device tree
         run: |
           mkdir -p device/oneplus/guacamole/prebuilts/
           cp /tmp/picklehik3-artifact/PickleHik3-signed.apk \
              device/oneplus/guacamole/prebuilts/PickleHik3.apk
+
+      - name: Use prebuilt custom kernel
+        run: |
+          mkdir -p kernel/oneplus/sm8150/arch/arm64/boot/
+          cp /tmp/kernel-artifact/Image.gz-dtb kernel/oneplus/sm8150/arch/arm64/boot/
 
       - name: Apply device.mk patch
         run: |
@@ -144,7 +157,19 @@ EOF
           cp $GITHUB_WORKSPACE/device-tree/prebuilts/Android.mk \
              device/oneplus/guacamole/prebuilts/
 
+      - name: Setup ccache
+        run: |
+          CCACHE_DIR=/root/.ccache
+          echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=10G" >> $GITHUB_ENV
+          ccache -M 10G
+          ccache -z
+
       - name: Build ROM
+        env:
+          TARGET_PREBUILT_KERNEL: kernel/oneplus/sm8150/arch/arm64/boot/Image.gz-dtb
+          BOARD_KERNEL_IMAGE_NAME: Image.gz-dtb
+          USE_CCACHE: 1
         run: |
           source build/envsetup.sh
           lunch lineage_guacamole-userdebug
