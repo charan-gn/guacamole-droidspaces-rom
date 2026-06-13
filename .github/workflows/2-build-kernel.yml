@@ -70,10 +70,9 @@ jobs:
           fi
 
           # ── Fix camera cross-directory headers ─────────────────────────
-          for dir in cam_core cam_utils cam_req_mgr; do
-            echo "ccflags-y += -I\$(src)/.." >> drivers/media/platform/msm/camera/$dir/Makefile
-          done
+          echo "ccflags-y += -I\$(src)/.." >> drivers/media/platform/msm/camera/cam_core/Makefile
           echo "ccflags-y += -I\$(src)/../cam_utils" >> drivers/media/platform/msm/camera/cam_core/Makefile
+          echo "ccflags-y += -I\$(src)/../cam_req_mgr" >> drivers/media/platform/msm/camera/cam_utils/Makefile
 
           # ── Fix GPU msm trace headers ─────────────────────────────────
           echo "ccflags-y += -I\$(src)" >> drivers/gpu/msm/Makefile
