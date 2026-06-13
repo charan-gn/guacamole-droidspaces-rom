@@ -118,11 +118,20 @@ jobs:
       - name: Apply kernel config
         run: |
           cd kernel
-          cp ../kernel-config-backup .config
+
+          # ── Start from the proper LOS 18.1 defconfig ─────────────────
+          make ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LD=ld.lld \
+            vendor/sm8150-perf_defconfig
 
           # ── Add DroidSpaces config flags ──────────────────────────────
           scripts/config \
+            --enable  PSI \
             --enable  POSIX_MQUEUE \
+            --enable  PID_NS \
             --enable  CGROUP_PIDS \
             --enable  CGROUP_DEVICE \
             --enable  CGROUP_NET_PRIO \
@@ -136,12 +145,10 @@ jobs:
             --enable  NETFILTER_XT_MATCH_ADDRTYPE \
             --enable  NF_CONNTRACK_NETLINK \
             --enable  NF_NAT_REDIRECT \
-            --disable ANDROID_PARANOID_NETWORK
+            --disable ANDROID_PARANOID_NETWORK \
+            --disable MODVERSIONS
 
-          # ── Disable MODVERSIONS ──────────────────────────────────────
-          scripts/config --disable MODVERSIONS
-
-          # ── Disable CC_STACKPROTECTOR_STRONG ─────────────────────────
+          # ── NDK Clang doesn't support STRONG; use NONE ───────────────
           sed -i '/CONFIG_CC_STACKPROTECTOR_STRONG/d' .config
           sed -i '/^CONFIG_CC_STACKPROTECTOR=y/d' .config
           sed -i '/^CONFIG_CC_STACKPROTECTOR_REGULAR=y/d' .config
