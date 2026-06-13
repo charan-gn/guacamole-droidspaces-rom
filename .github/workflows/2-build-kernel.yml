@@ -72,7 +72,9 @@ jobs:
           # ── Fix camera cross-directory headers ─────────────────────────
           echo "ccflags-y += -I\$(src)/.." >> drivers/media/platform/msm/camera/cam_core/Makefile
           echo "ccflags-y += -I\$(src)/../cam_utils" >> drivers/media/platform/msm/camera/cam_core/Makefile
-          echo "ccflags-y += -I\$(src)/../cam_req_mgr" >> drivers/media/platform/msm/camera/cam_utils/Makefile
+          echo "ccflags-y += -I\$(src)/.." >> drivers/media/platform/msm/camera/cam_req_mgr/Makefile
+          echo "ccflags-y += -I\$(src)" >> drivers/media/platform/msm/camera/cam_req_mgr/Makefile
+          echo "ccflags-y += -I\$(src)/../cam_utils" >> drivers/media/platform/msm/camera/cam_utils/Makefile
 
           # ── Fix GPU msm trace headers ─────────────────────────────────
           echo "ccflags-y += -I\$(src)" >> drivers/gpu/msm/Makefile
@@ -159,52 +161,38 @@ jobs:
           sed -i '/^CONFIG_CC_STACKPROTECTOR_REGULAR=y/d' .config
           echo 'CONFIG_CC_STACKPROTECTOR_NONE=y' >> .config
 
-      - name: Install aarch64 cross tools from apt
+      - name: Install aarch64 cross tools + Clang 14 from apt
         run: |
-          sudo apt install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu lld
-
-      - name: Fetch NDK Clang r416183b (sparse checkout)
-        run: |
-          mkdir -p toolchain
-          cd toolchain
-          git init
-          git remote add origin \
-            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
-          git config core.sparseCheckout true
-          echo "clang-r416183b/" >> .git/info/sparse-checkout
-          git fetch --depth=1 origin master
-          git checkout origin/master
-          ls clang-r416183b/bin/clang && echo "Clang OK" || echo "CLANG MISSING"
-          echo "CLANG_DIR=$(pwd)/clang-r416183b" >> $GITHUB_ENV
+          sudo apt install -y gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu \
+            lld-14 clang-14
+          echo "CLANG_DIR=/usr/lib/llvm-14" >> $GITHUB_ENV
 
       - name: Run olddefconfig
         run: |
-          export PATH="$CLANG_DIR/bin:$PATH"
           cd kernel
           make ARCH=arm64 \
-            CC=clang \
+            CC=clang-14 \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            LD=ld.lld \
+            LD=ld.lld-14 \
             HOSTCC=gcc \
             olddefconfig
 
       - name: Build kernel
         run: |
-          export PATH="$CLANG_DIR/bin:$PATH"
           cd kernel
           make ARCH=arm64 \
-            CC=clang \
+            CC=clang-14 \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
-            LD=ld.lld \
+            LD=ld.lld-14 \
             HOSTCC=gcc \
             HOSTCXX=g++ \
             KCFLAGS="-Wno-error=unknown-warning-option \
                      -Wno-format -Wno-return-type -Wno-implicit-int \
                      -Wno-unused-but-set-variable -Wno-unused-variable \
                      -U__FORTIFY_SOURCE" \
-            -j1 2>&1 | tee build.log
+            -j$(nproc) 2>&1 | tee build.log
           echo "--- LAST 50 LINES ---"
           tail -50 build.log
 
