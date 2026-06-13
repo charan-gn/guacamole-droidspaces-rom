@@ -195,7 +195,7 @@ jobs:
                      -Wno-format -Wno-return-type -Wno-implicit-int \
                      -Wno-unused-but-set-variable -Wno-unused-variable \
                      -U__FORTIFY_SOURCE" \
-            -j$(nproc) 2>&1 | tee build.log
+            -j$(nproc) Image.gz-dtb 2>&1 | tee build.log
           echo "--- LAST 50 LINES ---"
           tail -50 build.log
 
