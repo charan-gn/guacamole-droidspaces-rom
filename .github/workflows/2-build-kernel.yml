@@ -115,6 +115,10 @@ jobs:
           # ── Override -Werror globally ─────────────────────────────────
           echo 'KBUILD_CFLAGS += -Wno-error' >> Makefile
 
+          # ── Add -I$(src) for Clang <> include resolution ─────────────────
+          echo 'KBUILD_CFLAGS += -I$(src)' >> Makefile
+          echo 'KBUILD_CFLAGS += -I$(srctree)/include' >> Makefile
+
       - name: Apply kernel config
         run: |
           cd kernel
