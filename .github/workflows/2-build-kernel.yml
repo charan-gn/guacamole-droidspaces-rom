@@ -115,9 +115,9 @@ jobs:
           # ── Override -Werror globally ─────────────────────────────────
           echo 'KBUILD_CFLAGS += -Wno-error' >> Makefile
 
-          # ── Add -I$(src) for Clang <> include resolution ─────────────────
-          echo 'KBUILD_CFLAGS += -I$(src)' >> Makefile
-          echo 'KBUILD_CFLAGS += -I$(srctree)/include' >> Makefile
+          # ── Fix kernel/trace <> include paths for NDK Clang ──────────────
+          echo 'ccflags-y += -I$(src)' >> kernel/trace/Makefile
+          echo 'ccflags-y += -I$(srctree)/kernel/sched' >> kernel/trace/Makefile
 
       - name: Apply kernel config
         run: |
