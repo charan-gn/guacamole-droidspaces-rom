@@ -76,7 +76,8 @@ jobs:
           echo "ccflags-y += -I\$(src)" >> drivers/media/platform/msm/camera/cam_req_mgr/Makefile
           echo "ccflags-y += -I\$(src)/../cam_utils" >> drivers/media/platform/msm/camera/cam_utils/Makefile
           echo "ccflags-y += -I\$(src)/../cam_sensor_utils" >> drivers/media/platform/msm/camera/cam_sensor_module/cam_cci/Makefile
-          echo "ccflags-y += -I\$(src)/../cam_sensor_io" >> drivers/media/platform/msm/camera/cam_sensor_module/cam_sensor_utils/Makefile
+          echo "ccflags-y += -I\$(src)/.. -I\$(src)/../cam_sensor_io" >> drivers/media/platform/msm/camera/cam_sensor_module/cam_sensor_utils/Makefile
+          echo "ccflags-y += -I\$(src)/.." >> drivers/media/platform/msm/camera/cam_sensor_module/cam_sensor_io/Makefile
           echo "ccflags-y += -I\$(src) -I\$(src)/../cam_cci" >> drivers/media/platform/msm/camera/cam_sensor_module/cam_cci/Makefile
 
           # ── Fix GPU msm trace headers ─────────────────────────────────
@@ -181,9 +182,10 @@ jobs:
             HOSTCC=gcc \
             olddefconfig
 
-      - name: Build kernel
+      - name: Build kernel + Image.gz-dtb
         run: |
           cd kernel
+          # Build kernel, Image.gz, and dtbs in one go
           make ARCH=arm64 \
             CC=clang-14 \
             CLANG_TRIPLE=aarch64-linux-gnu- \
@@ -195,31 +197,13 @@ jobs:
                      -Wno-format -Wno-return-type -Wno-implicit-int \
                      -Wno-unused-but-set-variable -Wno-unused-variable \
                      -U__FORTIFY_SOURCE" \
-            -j$(nproc) 2>&1 | tee build.log
+            -j$(nproc) Image.gz dtbs 2>&1 | tee build.log
+          # Concatenate Image.gz + all sm8150 dtbs -> Image.gz-dtb
+          cat arch/arm64/boot/Image.gz arch/arm64/boot/dts/qcom/sm8150*.dtb \
+            > arch/arm64/boot/Image.gz-dtb
           echo "--- LAST 50 LINES ---"
           tail -50 build.log
-
-      - name: Build Image.gz-dtb
-        run: |
-          cd kernel
-          # Build dtbs
-          make ARCH=arm64 \
-            CC=clang-14 \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            LD=ld.lld-14 \
-            HOSTCC=gcc \
-            dtbs
-          # Build compressed kernel image
-          make ARCH=arm64 \
-            CC=clang-14 \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            LD=ld.lld-14 \
-            HOSTCC=gcc \
-            Image.gz
-          # Concatenate Image.gz + all dtbs -> Image.gz-dtb
-          cat arch/arm64/boot/Image.gz arch/arm64/boot/dts/qcom/sm8150*.dtb > arch/arm64/boot/Image.gz-dtb
+          echo "--- Image.gz-dtb ---"
           ls -lh arch/arm64/boot/Image.gz-dtb
 
       - name: Collect kernel artifact
