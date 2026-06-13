@@ -39,12 +39,7 @@ jobs:
         run: |
           cd kernel
 
-          # ── Remove opslalib ───────────────────────────────────────────
-          sed -i 's/ opslalib\///' Makefile
-
-          # ── Stub OnePlus undefined symbols ────────────────────────────
-          printf "\nint game_start_state = 0;\nint game_rtt_wan_detect_flag = 0;\nint rtt_rear = 0;\nint sla_switch_enable = 0;\n" \
-            >> net/opsla/op_sla.c
+          # ── opslalib kept in build (patch hunk rejected ─ wrong order) ──
 
           # ── Fix all trace header include paths ────────────────────────
           find drivers -name "*trace.c" | sed 's|/[^/]*$||' | sort -u | while read dir; do
