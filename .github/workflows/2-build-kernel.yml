@@ -69,8 +69,10 @@ jobs:
             echo "ccflags-y += -I\$(src)" >> drivers/clk/qcom/mdss/Makefile
           fi
 
-          # ── Fix camera core headers ───────────────────────────────────
-          echo "ccflags-y += -I\$(src)"             >> drivers/media/platform/msm/camera/cam_core/Makefile
+          # ── Fix camera cross-directory headers ─────────────────────────
+          for dir in cam_core cam_utils cam_req_mgr; do
+            echo "ccflags-y += -I\$(src)/.." >> drivers/media/platform/msm/camera/$dir/Makefile
+          done
           echo "ccflags-y += -I\$(src)/../cam_utils" >> drivers/media/platform/msm/camera/cam_core/Makefile
 
           # ── Fix GPU msm trace headers ─────────────────────────────────
