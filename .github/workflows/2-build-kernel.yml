@@ -39,7 +39,8 @@ jobs:
         run: |
           cd kernel
 
-          # ── opslalib kept in build (patch hunk rejected ─ wrong order) ──
+          # ── Fix opslalib/Makefile: KBUILD_SRC is empty for in-tree builds
+          sed -i 's/\$(KBUILD_SRC)/\$(srctree)/' opslalib/Makefile
 
           # ── Fix all trace header include paths ────────────────────────
           find drivers -name "*trace.c" | sed 's|/[^/]*$||' | sort -u | while read dir; do
